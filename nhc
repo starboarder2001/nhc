@@ -576,10 +576,30 @@ function nhcmain_detach() {
 
 function nhcmain_run_checks() {
     CHECKS=( )
+    FREQ_CHECKS=( )
     nhc_load_conf "$CONFFILE"
     for ((CNUM=0; CNUM<${#CHECKS[*]}; CNUM++)); do
         CHECK="${CHECKS[$CNUM]}"
+        FREQ_CHECK="${FREQ_CHECKS[$CNUM]}"
         CHECK_DIED=0
+
+        # If frequency defined, verify last run time and
+        # skip the check if its not ready to run based on the frequency
+        if [[ -n ${FREQ_CHECK+x} ]] && [[ $FREQ_CHECK -gt 0 ]]; then
+            dbg "Freq check: \"$CHECK\" will run every $FREQ_CHECK seconds"
+            if [ -f /tmp/nhc_check_last_run_${CNUM} ]; then
+                CURRENT_EPOC=$(date '+%s')
+                LAST_RUNTIME=$(head -1 /tmp/nhc_check_last_run_${CNUM})
+                dbg "Freq check: \"$CHECK\" last ran ${LAST_RUNTIME}"
+                if [[ $(( ${CURRENT_EPOC} - ${LAST_RUNTIME} )) -lt $FREQ_CHECK ]]; then
+                    # Its not ready to be run, check again next cycle
+                    dbg "Freq check: \"$CHECK\" skipped because not ready to run, current_epoc: ${CURRENT_EPOC}, last_runtime: ${LAST_RUNTIME}, freq_check: ${FREQ_CHECK}"
+                    continue;
+                fi
+            else
+                dbg "Freq check: \"$CHECK\" first time running"
+            fi
+        fi
 
         # Run the check.
         if [[ "$NHC_CHECK_FORKED" == 0 ]] || mcheck "$CHECK" '/( |^)(export )?[A-Za-z_][A-Za-z0-9_]*=[^ =]/'; then
@@ -606,6 +626,12 @@ function nhcmain_run_checks() {
             fi
             return $RET
         fi
+
+        # Log last run of check, if frequency is used/set
+        if [[ -n ${FREQ_CHECK+x} ]] && [[ $FREQ_CHECK -gt 0 ]]; then
+            date '+%s' > /tmp/nhc_check_last_run_${CNUM}
+        fi
+
     done
     if [[ "$FAIL_CNT" > 0 && "$NHC_CHECK_ALL" == "1" ]]; then
         # One or more checks have failed.  Give final report and terminate.
