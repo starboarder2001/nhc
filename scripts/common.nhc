@@ -332,13 +332,13 @@ function nhc_load_conf() {
     local CONFFILE="$1"
     local WS=$' \t'
     local LINE TARGET CHECK
-    local FREQUENCY_SEC=-1
 
     # Load configuration file and match lines to current hostname.
     dbg "Loading configuration from $CONFFILE."
     while read LINE ; do
         TARGET="${LINE%%||*}"
         CHECK="${LINE#*||}"
+        local FREQUENCY_SEC=-1
 
         # Trim whitespace.
         while [[ "${TARGET##[$WS]}" != "${TARGET%%[$WS]}" ]]; do
@@ -372,7 +372,7 @@ function nhc_load_conf() {
 
         # Add the check to our list.
         CHECKS[${#CHECKS[*]}]="$CHECK"
-        FREQ_CHECKS[${#CHECKS[*]}]=$FREQUENCY_SEC
+        FREQ_CHECKS[${#FREQ_CHECKS[*]}]=$FREQUENCY_SEC
     done < "$CONFFILE"
 }
 
