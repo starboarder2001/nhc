@@ -626,17 +626,8 @@ function nhcmain_run_checks() {
     nhc_load_conf "$CONFFILE"
     for ((CNUM=0; CNUM<${#CHECKS[*]}; CNUM++)); do
         CHECK="${CHECKS[$CNUM]}"
-
-        # MD5SUM is used to uniquely identify each check
-        # instead of only relying on its position in the nhc.conf file
-        if [[ -f /usr/bin/md5sum ]]; then
-            CHECK_MD5SUM=$(echo $CHECK | /usr/bin/md5sum | awk '{print $1}')
-        else
-            CHECK_MD5SUM="0"
-        fi
-
         FREQ_CHECK="${FREQ_CHECKS[$CNUM]}"
-        local FREQ_CHECK_FILE="/tmp/nhc_check_last_run_${CNUM}_${CHECK_MD5SUM}"
+        local FREQ_CHECK_FILE="/tmp/nhc_check_last_run_${CNUM}"
         local IS_FREQ_CHECK=0
         local LEADER="$NHC_NOTELEADER"
         CHECK_DIED=0
@@ -646,6 +637,14 @@ function nhcmain_run_checks() {
         if [[ -n ${FREQ_CHECK+x} ]] && [[ $FREQ_CHECK -gt 0 ]]; then
             IS_FREQ_CHECK=1
             LEADER="NHC_${CNUM}:"
+
+            # MD5SUM is used to uniquely identify each check
+            # instead of only relying on its position in the nhc.conf file
+            if [[ -f /usr/bin/md5sum ]]; then
+                CHECK_MD5SUM=$(echo $CHECK | /usr/bin/md5sum | awk '{print $1}')
+                FREQ_CHECK_FILE="${FREQ_CHECK_FILE}_${CHECK_MD5SUM}"
+            fi
+
             dbg "Freq check: \"$CHECK\" will run every $FREQ_CHECK seconds"
             if [[ -f ${FREQ_CHECK_FILE} ]]; then
                 CURRENT_EPOC=$(date '+%s')
