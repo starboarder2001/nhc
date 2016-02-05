@@ -1,0 +1,29 @@
+# NHC - nVidia GPU Checks
+#
+# David Whiteside <david.whiteside@nrel.gov>
+# 05 Feb 2016
+#
+
+function nrel_cpu_is_htenabled() {
+    local NRELCPU_HT_IS_ENABLED="$1"
+    CPUFILE="/proc/cpuinfo"
+    test -f $CPUFILE || die 1 "/etc/cpuinfo does not exist"
+    NUMPHY=$(grep "physical id" $CPUFILE | sort -u | wc -l)
+    NUMLOG=$(grep "processor" $CPUFILE | wc -l)
+    NUMCORE=1
+
+    if [[ $NUMLOG -gt 1 ]]; then
+        NUMCORE=$(grep "core id" $CPUFILE | sort -u | wc -l)
+    fi
+
+    if [[ $NUMLOG -eq $((${NUMCORE}*${NUMPHY})) ]]; then
+        if [[ ${NRELCPU_HT_IS_ENABLED} = "True" ]]; then
+            die 2 "Hyperthreading is disabled, expected ht to be enabled"
+        fi
+    else
+        if [[ ! ${NRELCPU_HT_IS_ENABLED} = "True" ]]; then
+            die 3 "Hyperthreading is enabled, expected ht to be disabled"
+        fi
+    fi
+    return 0
+}
