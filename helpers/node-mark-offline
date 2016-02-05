@@ -13,11 +13,12 @@
 # marked offline with the note supplied.
 
 IGNORE_EMPTY_NOTE="${IGNORE_EMPTY_NOTE:-0}"
-LEADER="NHC:"
 
 echo "`date '+%Y%m%d %H:%M:%S'` $0 $*"
 
 HOSTNAME="$1"
+shift
+LEADER="$2"
 shift
 NOTE="$*"
 

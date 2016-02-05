@@ -338,6 +338,7 @@ function nhc_load_conf() {
     while read LINE ; do
         TARGET="${LINE%%||*}"
         CHECK="${LINE#*||}"
+        local FREQUENCY_SEC=-1
 
         # Trim whitespace.
         while [[ "${TARGET##[$WS]}" != "${TARGET%%[$WS]}" ]]; do
@@ -357,12 +358,21 @@ function nhc_load_conf() {
         # Skip empty targets or checks.
         test "$TARGET" = "" -o "$CHECK" = "" && continue
 
+        # Parse run frequency from TARGET in seconds
+        # example: n0[001-100]:120 || check
+        mcheck "$TARGET" '/:[0-9]+$/'
+        if [ $? -eq 0 ]; then
+            FREQUENCY_SEC="${TARGET#*:}"
+            TARGET="${TARGET%%:*}"
+        fi
+
         # Check to see if the current host matches the check we just read.
         # If we didn't match, skip to the next line.
         mcheck "$HOSTNAME" "$TARGET" || continue
 
         # Add the check to our list.
         CHECKS[${#CHECKS[*]}]="$CHECK"
+        FREQ_CHECKS[${#FREQ_CHECKS[*]}]=$FREQUENCY_SEC
     done < "$CONFFILE"
 }
 

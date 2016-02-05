@@ -51,7 +51,52 @@ function die() {
     syslog "Health check failed:  $*"
     syslog_flush
     if [[ -n "$NHC_RM" && "$MARK_OFFLINE" -eq 1 && "$FAIL_CNT" -eq 0 ]]; then
-        eval $OFFLINE_NODE "'$HOSTNAME'" "'$*'"
+        eval $OFFLINE_NODE "'$HOSTNAME'" "$NHC_NOTELEADER" "'$*'"
+    fi
+    if [[ -n "$NHC_DETACHED" ]]; then
+        if [[ -w "$RESULTFILE" ]]; then
+            echo "$RET $*" > $RESULTFILE
+        else
+            log "ERROR:  $NAME:  Unable to write to \"$RESULTFILE\" -- is ${RESULTFILE%/*} read-only?"
+            syslog "ERROR:  $NAME:  Unable to write to \"$RESULTFILE\" -- is ${RESULTFILE%/*} read-only?"
+            syslog_flush
+        fi
+    elif [[ "$NHC_RM" == "sge" ]]; then
+        echo "begin" >&$NHC_FD_OUT
+        echo "$HOSTNAME:healthy:false" >&$NHC_FD_OUT
+        echo "$HOSTNAME:diagnosis:NHC: $*" >&$NHC_FD_OUT
+        echo "end" >&$NHC_FD_OUT
+        return 77
+    elif [[ -n "$LOGFILE" ]]; then
+        oecho "ERROR:  $NAME:  Health check failed:  $*"
+    fi
+    if [[ "$NHC_CHECK_ALL" == "1" ]]; then
+        ((FAIL_CNT++))
+        return 0
+    fi
+    if [[ $RET -ne 142 && $RET -ne 143 ]]; then
+        # Don't kill the watchdog if we're in die() because it is terminating us.
+        kill_watchdog
+    fi
+    [[ $NHC_FD_OUT -eq 3 ]] && exec 1>&3- 2>&4-
+    [[ "$NHC_CHECK_FORKED" == "1" ]] && ((RET+=100))
+    exit $RET
+}
+
+# Declare a print-error-and-exit function that allows override of leader.
+function die2() {
+    IFS=$' \t\n'
+    local RET="$1"
+    shift
+    local LEADER="$2"
+    shift
+
+    CHECK_DIED=1
+    log "ERROR:  $NAME:  Health check failed:  $*"
+    syslog "Health check failed:  $*"
+    syslog_flush
+    if [[ -n "$NHC_RM" && "$MARK_OFFLINE" -eq 1 && "$FAIL_CNT" -eq 0 ]]; then
+        eval $OFFLINE_NODE "'$HOSTNAME'" "$LEADER" "'$*'"
     fi
     if [[ -n "$NHC_DETACHED" ]]; then
         if [[ -w "$RESULTFILE" ]]; then
@@ -328,6 +373,7 @@ function nhcmain_finalize_env() {
     TIMEOUT=${TIMEOUT:-30}
     NHC_CHECK_ALL=${NHC_CHECK_ALL:-0}
     NHC_CHECK_FORKED=${NHC_CHECK_FORKED:-0}
+    NHC_NOTELEADER=${NHC_NOTELEADER:"NHC:"}
     export NHC_SID=0
 
     # Check for session leader.
@@ -576,10 +622,43 @@ function nhcmain_detach() {
 
 function nhcmain_run_checks() {
     CHECKS=( )
+    FREQ_CHECKS=( )
     nhc_load_conf "$CONFFILE"
     for ((CNUM=0; CNUM<${#CHECKS[*]}; CNUM++)); do
         CHECK="${CHECKS[$CNUM]}"
+        FREQ_CHECK="${FREQ_CHECKS[$CNUM]}"
+        local FREQ_CHECK_FILE="/tmp/nhc_check_last_run_${CNUM}"
+        local IS_FREQ_CHECK=0
+        local LEADER="$NHC_NOTELEADER"
         CHECK_DIED=0
+
+        # If frequency defined, verify last run time and
+        # skip the check if its not ready to run based on the frequency
+        if [[ -n ${FREQ_CHECK+x} ]] && [[ $FREQ_CHECK -gt 0 ]]; then
+            IS_FREQ_CHECK=1
+            LEADER="NHC_${CNUM}:"
+
+            # MD5SUM is used to uniquely identify each check
+            # instead of only relying on its position in the nhc.conf file
+            if [[ -f /usr/bin/md5sum ]]; then
+                CHECK_MD5SUM=$(echo $CHECK | /usr/bin/md5sum | awk '{print $1}')
+                FREQ_CHECK_FILE="${FREQ_CHECK_FILE}_${CHECK_MD5SUM}"
+            fi
+
+            dbg "Freq check: \"$CHECK\" will run every $FREQ_CHECK seconds"
+            if [[ -f ${FREQ_CHECK_FILE} ]]; then
+                CURRENT_EPOC=$(date '+%s')
+                NEXT_RUNTIME=$(<  "${FREQ_CHECK_FILE}")
+                dbg "Freq check: \"$CHECK\" next ran ${NEXT_RUNTIME}"
+                if [[ ${CURRENT_EPOC} -lt ${NEXT_RUNTIME} ]]; then
+                    # Its not ready to be run, check again next cycle
+                    dbg "Freq check: \"$CHECK\" skipped because not ready to run, current_epoc: ${CURRENT_EPOC}, last_runtime: ${NEXT_RUNTIME}, freq_check: ${FREQ_CHECK}"
+                    continue;
+                fi
+            else
+                dbg "Freq check: \"$CHECK\" first time running"
+            fi
+        fi
 
         # Run the check.
         if [[ "$NHC_CHECK_FORKED" == 0 ]] || mcheck "$CHECK" '/( |^)(export )?[A-Za-z_][A-Za-z0-9_]*=[^ =]/'; then
@@ -602,10 +681,24 @@ function nhcmain_run_checks() {
             elif [[ "$CHECK_DIED" == "0" ]]; then
                 # If the check failed but didn't call die(), use this fallback.
                 log "Node Health Check failed.  Check $CHECK returned $RET"
-                die $RET "Check $CHECK returned $RET"
+                die2 $RET "$LEADER" "Check $CHECK returned $RET"
             fi
             return $RET
         fi
+
+        # Log last run of check, if frequency is used/set
+        if [[ $IS_FREQ_CHECK -eq 1 ]]; then
+            $(( $(date '+%s') + $FREQ_CHECK )) > ${FREQ_CHECK_FILE}
+
+            # Checks that vary by frequency need
+            # to be marked online independently.
+            # Future improvement should be made that checks the note OLD_LEADER
+            # one time and then only onlines nodes when it matches the CNUM.
+            if [[ -n "$NHC_RM" && "$MARK_OFFLINE" -eq 1 ]]; then
+                eval $ONLINE_NODE "'$HOSTNAME'" "$LEADER"
+            fi
+        fi
+
     done
     if [[ "$FAIL_CNT" > 0 && "$NHC_CHECK_ALL" == "1" ]]; then
         # One or more checks have failed.  Give final report and terminate.
@@ -621,7 +714,7 @@ function nhcmain_run_checks() {
 
 function nhcmain_mark_online() {
     if [[ -n "$NHC_RM" && "$MARK_OFFLINE" -eq 1 ]]; then
-        eval $ONLINE_NODE "'$HOSTNAME'"
+        eval $ONLINE_NODE "'$HOSTNAME'" "$NHC_NOTELEADER"
     fi
 }
 

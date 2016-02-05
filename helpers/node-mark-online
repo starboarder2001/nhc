@@ -12,8 +12,8 @@
 # to avoid onlining nodes it didn't originally offline.
 
 IGNORE_EMPTY_NOTE="${IGNORE_EMPTY_NOTE:-0}"
-LEADER="NHC:"
 HOSTNAME="$1"
+LEADER="$2"
 NOTE=""
 
 echo "`date '+%Y%m%d %H:%M:%S'` [$NHC_RM] $0 $*"
