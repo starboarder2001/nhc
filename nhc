@@ -648,7 +648,7 @@ function nhcmain_run_checks() {
             dbg "Freq check: \"$CHECK\" will run every $FREQ_CHECK seconds"
             if [[ -f ${FREQ_CHECK_FILE} ]]; then
                 CURRENT_EPOC=$(date '+%s')
-                NEXT_RUNTIME=$(head -1 "${FREQ_CHECK_FILE}")
+                NEXT_RUNTIME=$(<  "${FREQ_CHECK_FILE}")
                 dbg "Freq check: \"$CHECK\" next ran ${NEXT_RUNTIME}"
                 if [[ ${CURRENT_EPOC} -lt ${NEXT_RUNTIME} ]]; then
                     # Its not ready to be run, check again next cycle
