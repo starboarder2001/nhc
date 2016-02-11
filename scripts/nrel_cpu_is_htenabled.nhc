@@ -7,7 +7,7 @@
 function nrel_cpu_is_htenabled() {
     local NRELCPU_HT_IS_ENABLED="$1"
     CPUFILE="/proc/cpuinfo"
-    test -f $CPUFILE || die 1 "/etc/cpuinfo does not exist"
+    test -f $CPUFILE || die 1 "/proc/cpuinfo does not exist"
     NUMPHY=$(grep "physical id" $CPUFILE | sort -u | wc -l)
     NUMLOG=$(grep "processor" $CPUFILE | wc -l)
     NUMCORE=1
